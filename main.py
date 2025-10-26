@@ -145,5 +145,7 @@ def chat_endpoint():
 
 # Run the server locally
 if __name__ == '__main__':
-    print("🌐 Starting LLM-powered Flask server.")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    # Get the port from environment variable (Cloud Run sets PORT automatically)
+    port = int(os.environ.get("PORT", 8080))  # fallback 8080 for local testing
+    print(f"🌐 Starting LLM-powered Flask server on port {port}...")
+    app.run(host="0.0.0.0", port=port)
