@@ -82,7 +82,7 @@ def get_gemini_response(text):
 
 # --- Flask API Endpoint ---
 
-@app.route('/api/chat', methods=['POST'])
+@app.route('https://sentiment-analysis-210161969755.asia-south1.run.app/api/chat', methods=['POST'])
 def chat_endpoint():
     """ Handles the chat message request. """
     data = request.get_json(silent=True)
