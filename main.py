@@ -1,46 +1,59 @@
-import os
-import json
-import traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import os, json, traceback
 from google import genai
 from google.genai import types
 
 app = Flask(__name__)
 
-# ✅ Allow only your frontend domain
+# ✅ Define your frontend URL
 FRONTEND_URL = "https://sentiment-analysis-210161969755.asia-south1.run.app"
 
-# ✅ CORS configuration
+# ✅ Allow only your frontend
 CORS(app, resources={r"/api/*": {"origins": [FRONTEND_URL]}}, supports_credentials=True)
 
-# --- Gemini Initialization ---
 try:
     client = genai.Client()
     GEMINI_MODEL = "gemini-2.5-flash"
-    print(f"✅ Gemini client initialized with model: {GEMINI_MODEL}")
+    print("✅ Gemini client initialized")
 except Exception as e:
-    print(f"⚠️ WARNING: Gemini client initialization failed: {e}")
+    print(f"⚠️ Gemini init failed: {e}")
     client = None
 
 
-def get_gemini_response(text):
-    """Get sentiment and reply from Gemini."""
-    if client is None:
-        return "ERROR", "❌", "Gemini client not initialized. Check API key."
+@app.after_request
+def add_cors_headers(response):
+    """Ensure every response has CORS headers"""
+    response.headers.add("Access-Control-Allow-Origin", FRONTEND_URL)
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    return response
 
-    system_instruction = (
-        "You are a friendly chatbot that analyzes sentiment and responds nicely. "
-        "Always respond in JSON with keys: sentiment, emoji, response."
-    )
-    prompt = f"Analyze this text and respond in JSON: \"{text}\""
+
+@app.route("/api/chat", methods=["POST", "OPTIONS"])
+def chat_endpoint():
+    # ✅ Handle OPTIONS preflight requests
+    if request.method == "OPTIONS":
+        return jsonify({"message": "CORS preflight success"}), 200
+
+    data = request.get_json(silent=True)
+    if not data or "message" not in data:
+        return jsonify({"error": "Missing 'message' field"}), 400
+
+    text = data["message"]
+
+    if not client:
+        return jsonify({
+            "sentiment": "ERROR",
+            "sentiment_emoji": "❌",
+            "chatbot_response": "Gemini API not initialized"
+        }), 500
 
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=prompt,
+            contents=f"Analyze sentiment of: \"{text}\" and return JSON with keys sentiment, emoji, response.",
             config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
                 response_mime_type="application/json",
                 response_schema={
                     "type": "object",
@@ -53,47 +66,26 @@ def get_gemini_response(text):
                 }
             )
         )
-        json_data = json.loads(response.text)
-        return json_data["sentiment"], json_data["emoji"], json_data["response"]
+        res = json.loads(response.text)
+        return jsonify({
+            "user_message": text,
+            "sentiment": res.get("sentiment"),
+            "sentiment_emoji": res.get("emoji"),
+            "chatbot_response": res.get("response")
+        }), 200
 
     except Exception as e:
         traceback.print_exc()
-        return "ERROR", "❌", f"Model error: {e}"
-
-
-@app.route("/api/chat", methods=["POST", "OPTIONS"])
-def chat_endpoint():
-    """Main chat endpoint with CORS preflight handling."""
-    # ✅ Handle OPTIONS preflight requests
-    if request.method == "OPTIONS":
-        response = jsonify({"status": "CORS preflight success"})
-        response.headers.add("Access-Control-Allow-Origin", FRONTEND_URL)
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "POST,OPTIONS")
-        return response, 200
-
-    # ✅ Handle POST requests
-    data = request.get_json(silent=True)
-    if not data or "message" not in data:
-        return jsonify({"error": "Missing 'message' field"}), 400
-
-    user_message = data["message"]
-    sentiment, emoji, reply = get_gemini_response(user_message)
-
-    response = jsonify({
-        "user_message": user_message,
-        "sentiment": sentiment,
-        "sentiment_emoji": emoji,
-        "chatbot_response": reply
-    })
-    response.headers.add("Access-Control-Allow-Origin", FRONTEND_URL)
-    return response, 200
+        return jsonify({
+            "sentiment": "ERROR",
+            "sentiment_emoji": "❌",
+            "chatbot_response": f"Model error: {e}"
+        }), 500
 
 
 @app.route("/", methods=["GET"])
 def home():
-    """Health check route."""
-    return jsonify({"status": "Backend running", "region": "asia-south1"})
+    return jsonify({"status": "Backend running OK"}), 200
 
 
 if __name__ == "__main__":
