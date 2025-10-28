@@ -1,7 +1,8 @@
-# main.py - Modified for Gemini API
+# main.py - Corrected Flask Route and Enhanced Error Logging
 
 import os
 import json
+import traceback # Added for detailed error logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
@@ -15,12 +16,14 @@ CORS(app, resources={r"/api/*": {"origins": "*", "allow_credentials": True}})
 # --- Gemini Initialization ---
 
 # 1. Initialize the client (API key must be set as GEMINI_API_KEY environment variable in Cloud Run)
+client = None
 try:
+    # Client automatically picks up GEMINI_API_KEY from environment
     client = genai.Client()
     GEMINI_MODEL = "gemini-2.5-flash" 
     print(f"Gemini client initialized with model: {GEMINI_MODEL}")
 except Exception as e:
-    # This serves as a fail-safe if the key isn't set
+    # This serves as a fail-safe if the key isn't set, preventing a hard server crash on import
     print(f"WARNING: Gemini client initialization failed: {e}")
     client = None
 
@@ -76,13 +79,17 @@ def get_gemini_response(text):
         return sentiment_label, sentiment_emoji, chatbot_response
         
     except Exception as e:
-        print(f"Gemini API call or JSON parsing failed: {e}")
-        return "ERROR", "❌", "Failed to connect to the model or parse its response. Check logs."
+        # Log the full error traceback directly to Cloud Run logs
+        print(f"ERROR: Gemini API call or JSON parsing failed: {e}")
+        # Print stack trace to aid debugging
+        traceback.print_exc() 
+        return "ERROR", "❌", "Failed to connect to the model or parse its response. Check logs for traceback."
 
 
 # --- Flask API Endpoint ---
 
-@app.route('https://sentiment-analysis-210161969755.asia-south1.run.app/api/chat', methods=['POST'])
+# FIX: The route must only contain the path, not the full URL.
+@app.route('/api/chat', methods=['POST'])
 def chat_endpoint():
     """ Handles the chat message request. """
     data = request.get_json(silent=True)
