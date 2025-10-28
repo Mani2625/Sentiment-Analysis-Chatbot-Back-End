@@ -11,7 +11,7 @@ from google.genai import types
 app = Flask(__name__)
 # CRITICAL: In a real deployment, replace the wildcard with your frontend's URL!
 # We keep the wildcard for demonstration, but allow credentials for better browser compatibility.
-CORS(app, resources={r"/api/*": {"origins": "https://sentiment-analysis-210161969755.asia-south1.run.app", "allow_credentials": True}}) 
+CORS(app, resources={r"/api/*": {"origins": "https://sentiment-analysis-210161969755.asia-south1.run.app"}})
 
 # --- Gemini Initialization ---
 
