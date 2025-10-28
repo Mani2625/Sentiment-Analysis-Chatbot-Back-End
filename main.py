@@ -1,61 +1,99 @@
+import os
+import json
+import traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
-# ✅ CORS setup — MUST include 'supports_credentials' and handle OPTIONS
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["https://sentiment-analysis-210161969755.asia-south1.run.app"],
-        "supports_credentials": True
-    }
-})
+# ✅ Allow only your frontend domain
+FRONTEND_URL = "https://sentiment-analysis-210161969755.asia-south1.run.app"
 
-# ✅ Gemini API setup
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+# ✅ CORS configuration
+CORS(app, resources={r"/api/*": {"origins": [FRONTEND_URL]}}, supports_credentials=True)
 
-@app.route("/")
-def home():
-    return jsonify({"status": "Backend running", "region": "asia-south1"})
+# --- Gemini Initialization ---
+try:
+    client = genai.Client()
+    GEMINI_MODEL = "gemini-2.5-flash"
+    print(f"✅ Gemini client initialized with model: {GEMINI_MODEL}")
+except Exception as e:
+    print(f"⚠️ WARNING: Gemini client initialization failed: {e}")
+    client = None
+
+
+def get_gemini_response(text):
+    """Get sentiment and reply from Gemini."""
+    if client is None:
+        return "ERROR", "❌", "Gemini client not initialized. Check API key."
+
+    system_instruction = (
+        "You are a friendly chatbot that analyzes sentiment and responds nicely. "
+        "Always respond in JSON with keys: sentiment, emoji, response."
+    )
+    prompt = f"Analyze this text and respond in JSON: \"{text}\""
+
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "sentiment": {"type": "string"},
+                        "emoji": {"type": "string"},
+                        "response": {"type": "string"}
+                    },
+                    "required": ["sentiment", "emoji", "response"]
+                }
+            )
+        )
+        json_data = json.loads(response.text)
+        return json_data["sentiment"], json_data["emoji"], json_data["response"]
+
+    except Exception as e:
+        traceback.print_exc()
+        return "ERROR", "❌", f"Model error: {e}"
+
 
 @app.route("/api/chat", methods=["POST", "OPTIONS"])
-def chat():
+def chat_endpoint():
+    """Main chat endpoint with CORS preflight handling."""
+    # ✅ Handle OPTIONS preflight requests
     if request.method == "OPTIONS":
-        # ✅ Handle CORS preflight request manually
-        response = jsonify({"message": "CORS preflight OK"})
-        response.headers.add("Access-Control-Allow-Origin", "https://sentiment-analysis-210161969755.asia-south1.run.app")
+        response = jsonify({"status": "CORS preflight success"})
+        response.headers.add("Access-Control-Allow-Origin", FRONTEND_URL)
         response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
         response.headers.add("Access-Control-Allow-Methods", "POST,OPTIONS")
         return response, 200
 
-    data = request.get_json()
-    user_message = data.get("message", "")
+    # ✅ Handle POST requests
+    data = request.get_json(silent=True)
+    if not data or "message" not in data:
+        return jsonify({"error": "Missing 'message' field"}), 400
 
-    try:
-        sentiment = "POSITIVE" if "love" in user_message.lower() else "NEUTRAL"
-        emoji = "😊" if sentiment == "POSITIVE" else "😐"
+    user_message = data["message"]
+    sentiment, emoji, reply = get_gemini_response(user_message)
 
-        prompt = f"Analyze this message's tone and respond nicely: {user_message}"
-        gemini_response = model.generate_content(prompt)
-        chatbot_response = gemini_response.text.strip()
+    response = jsonify({
+        "user_message": user_message,
+        "sentiment": sentiment,
+        "sentiment_emoji": emoji,
+        "chatbot_response": reply
+    })
+    response.headers.add("Access-Control-Allow-Origin", FRONTEND_URL)
+    return response, 200
 
-        response = jsonify({
-            "user_message": user_message,
-            "chatbot_response": chatbot_response,
-            "sentiment": sentiment,
-            "sentiment_emoji": emoji
-        })
-        # ✅ Add CORS headers explicitly in actual response too
-        response.headers.add("Access-Control-Allow-Origin", "https://sentiment-analysis-210161969755.asia-south1.run.app")
-        return response, 200
 
-    except Exception as e:
-        response = jsonify({"error": str(e)})
-        response.headers.add("Access-Control-Allow-Origin", "https://sentiment-analysis-210161969755.asia-south1.run.app")
-        return response, 500
+@app.route("/", methods=["GET"])
+def home():
+    """Health check route."""
+    return jsonify({"status": "Backend running", "region": "asia-south1"})
 
 
 if __name__ == "__main__":
