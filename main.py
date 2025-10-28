@@ -11,7 +11,13 @@ from google.genai import types
 app = Flask(__name__)
 # CRITICAL: In a real deployment, replace the wildcard with your frontend's URL!
 # We keep the wildcard for demonstration, but allow credentials for better browser compatibility.
-CORS(app, resources={r"/api/*": {"origins": "https://sentiment-analysis-210161969755.asia-south1.run.app"}})
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["https://sentiment-analysis-210161969755.asia-south1.run.app"],
+        "supports_credentials": True
+    }
+})
+
 
 # --- Gemini Initialization ---
 
@@ -28,6 +34,11 @@ except Exception as e:
     client = None
 
 # --- Sentiment Analysis and Response Generation using Gemini ---
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "Sentiment Chatbot API running ✅"}), 200
+
 
 def get_gemini_response(text):
     """
